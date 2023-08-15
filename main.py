@@ -17,25 +17,8 @@ class MainWindow(QtWidgets.QMainWindow):
         uic.loadUi(os.path.join(os.path.dirname(__file__), "main.ui"), self)
         self.setWindowTitle("Main")
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
-
-        self.binance_client = Client(
-            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET
-        )
-        self.twm = ThreadedWebsocketManager(
-            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET
-        )
-        self.twm.daemon = True
-        self.twm.start()
-        self.binance_user_socket = self.twm.start_futures_user_socket(
-            callback=self.user_message
-        )
-        self.orders = self.binance_client.futures_get_open_orders()
-        self.positions = list(filter(
-            lambda x: float(x['entryPrice']) != 0,
-            self.binance_client.futures_position_information()
-        ))
-        print("ALREADY OPEN ORDERS:", self.orders)
-        print("ALREADY OPEN POSITIONS:", self.positions)
+        self.binance_client = None
+        self.binance_twm = None
 
         def cancel_all_orders(logicalIndex):
             if logicalIndex == 0:
@@ -47,14 +30,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.orders_tbl.horizontalHeader().sectionClicked.connect(
             cancel_all_orders
         )
+        self.update_btn.clicked.connect(self.update_info)
 
-        self.need_to_update_orders = True
-        self.need_to_update_positions = True
+        self.update_info()
 
         fps = 60
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_tables)
         self.timer.start(int(1000 / fps))
+
+    def update_info(self):
+        self.update_btn.setText("Wait...")
+        self.update_btn.repaint()
+        if self.binance_twm:
+            self.binance_twm.stop()
+            self.binance_twm.join()
+
+        self.binance_client = Client(
+            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET
+        )
+        self.binance_twm = ThreadedWebsocketManager(
+            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET
+        )
+        self.binance_twm.daemon = True
+        self.binance_twm.start()
+        self.binance_twm.start_futures_user_socket(
+            callback=self.user_message
+        )
+        self.orders = self.binance_client.futures_get_open_orders()
+        self.positions = list(filter(
+            lambda x: float(x['entryPrice']) != 0,
+            self.binance_client.futures_position_information()
+        ))
+        print("ALREADY OPEN ORDERS:", self.orders)
+        print("ALREADY OPEN POSITIONS:", self.positions)
+
+        self.need_to_update_orders = True
+        self.need_to_update_positions = True
+        self.update_btn.setText("Update")
 
     def update_tables(self):
         if self.need_to_update_orders:
