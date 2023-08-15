@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import QTableWidgetItem, QPushButton
 
 from binance.client import Client
 from binance import ThreadedWebsocketManager
-from config import BINANCE_API_KEY, BINANCE_API_SECRET
+from config import BINANCE_API_KEY, BINANCE_API_SECRET, HTTP_PROXY
 import datetime
 
 import sys
@@ -85,10 +85,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.binance_twm.join()
 
         self.binance_client = Client(
-            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET
+            BINANCE_API_KEY, BINANCE_API_SECRET,
+            {"proxies": {"https": HTTP_PROXY}}
         )
         self.binance_twm = ThreadedWebsocketManager(
-            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET
+            api_key=BINANCE_API_KEY, api_secret=BINANCE_API_SECRET,
+            requests_params={"proxy": HTTP_PROXY}
         )
         self.binance_twm.daemon = True
         self.binance_twm.start()
