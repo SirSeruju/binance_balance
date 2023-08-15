@@ -9,6 +9,8 @@ import datetime
 
 import sys
 import os
+import threading
+import traceback
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -19,20 +21,56 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowFlags(Qt.WindowStaysOnTopHint)
         self.binance_client = None
         self.binance_twm = None
+        self.need_to_update_orders = False
+        self.need_to_update_positions = False
+        self.orders = []
+        self.positions = []
 
         def cancel_all_orders(logicalIndex):
-            if logicalIndex == 0:
-                symbols = list(set(map(lambda x: x["symbol"], self.orders)))
+            if logicalIndex != 0:
+                return
+            try:
+                symbols = list(set(map(
+                    lambda x: x["symbol"], self.orders
+                )))
                 for symbol in symbols:
                     self.binance_client.futures_cancel_all_open_orders(
                         symbol=symbol
                     )
+            except Exception:
+                print(traceback.format_exc())
+
+        def close_all_positions(logicalIndex):
+            if logicalIndex != 0:
+                return
+            try:
+                positions = self.positions[:]
+                for position in positions:
+                    print(position)
+                    symbol = position["symbol"]
+                    quantity = position["positionAmt"]
+                    position_side = position["positionSide"]
+                    self.binance_client.futures_create_order(
+                            symbol=symbol,
+                            side="SELL" if position_side == "LONG" else "BUY", # noqa
+                            type="MARKET",
+                            positionSide=position_side,
+                            quantity=quantity if position_side == "LONG" else quantity[1:], # noqa
+                        )
+            except Exception:
+                print(traceback.format_exc())
+
         self.orders_tbl.horizontalHeader().sectionClicked.connect(
             cancel_all_orders
         )
-        self.update_btn.clicked.connect(self.update_info)
+        self.positions_tbl.horizontalHeader().sectionClicked.connect(
+            close_all_positions
+        )
 
-        self.update_info()
+        self.update_btn.clicked.connect(
+            lambda: threading.Thread(target=self.update_info).start()
+        )
+        threading.Thread(target=self.update_info).start()
 
         fps = 60
         self.timer = QTimer(self)
@@ -40,8 +78,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timer.start(int(1000 / fps))
 
     def update_info(self):
+        self.update_btn.setEnabled(False)
         self.update_btn.setText("Wait...")
-        self.update_btn.repaint()
         if self.binance_twm:
             self.binance_twm.stop()
             self.binance_twm.join()
@@ -68,6 +106,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.need_to_update_orders = True
         self.need_to_update_positions = True
         self.update_btn.setText("Update")
+        self.update_btn.setEnabled(True)
 
     def update_tables(self):
         if self.need_to_update_orders:
@@ -148,18 +187,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self.need_to_update_positions = True
 
     def update_orders(self):
-        # self.orders_tbl.clearContents()
+        self.orders_tbl.clearContents()
         self.orders_tbl.setRowCount(0)
+
+        def cancel_order(symbol, order_id):
+            try:
+                self.binance_client.futures_cancel_order(
+                    symbol=symbol,
+                    orderId=order_id,
+                )
+            except Exception:
+                print(traceback.format_exc())
+
         for i, order in enumerate(self.orders):
             self.orders_tbl.insertRow(i)
 
             self.orders_tbl.setItem(i, 0, QTableWidgetItem())
             btn = QPushButton("Cancel")
+
             btn.clicked.connect(
-                lambda: self.binance_client.futures_cancel_order(
-                    symbol=order["symbol"],
-                    orderId=order["orderId"],
-                )
+                lambda: cancel_order(order["symbol"], order["orderId"])
             )
             self.orders_tbl.setCellWidget(i, 0, btn)
 
@@ -178,20 +225,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.need_to_update_orders = False
 
     def update_positions(self):
-        # self.positions_tbl.clearContents()
+        self.positions_tbl.clearContents()
         self.positions_tbl.setRowCount(0)
+
+        def close_position(symbol, position_side, quantity):
+            try:
+                self.binance_client.futures_create_order(
+                        symbol=symbol,
+                        side="SELL" if position_side == "LONG" else "BUY", # noqa
+                        type="MARKET",
+                        positionSide=position_side,
+                        quantity=quantity if position_side == "LONG" else quantity[1:], # noqa
+                    )
+            except Exception:
+                print(traceback.format_exc())
+
         for i, position in enumerate(self.positions):
             self.positions_tbl.insertRow(i)
 
             self.positions_tbl.setItem(i, 0, QTableWidgetItem())
             btn = QPushButton("Market")
             btn.clicked.connect(
-                lambda: self.binance_client.futures_create_order(
-                    symbol=position["symbol"],
-                    side="SELL" if position["positionSide"] == "LONG" else "BUY", # noqa
-                    type="MARKET",
-                    positionSide=position["positionSide"],
-                    quantity=position["positionAmt"] if position["positionSide"] == "LONG" else position["positionAmt"][1:], # noqa
+                lambda: close_position(
+                    position["symbol"],
+                    position["positionSide"],
+                    position["positionAmt"]
                 )
             )
             self.positions_tbl.setCellWidget(i, 0, btn)
@@ -207,6 +265,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.positions_tbl.setItem(i, 6, QTableWidgetItem(position["isolatedWallet"])) # noqa
 
         self.need_to_update_positions = False
+
+    def closeEvent(self, event):
+        self.update_btn.setEnabled(False)
+        self.update_btn.setText("Wait...")
+        self.repaint()
+        if self.binance_twm:
+            self.binance_twm.stop()
+            self.binance_twm.join()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":
