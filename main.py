@@ -118,6 +118,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def user_message(self, msg):
         print(msg)
+        if "e" in msg.keys() and msg["e"] == "error":
+            self.update_info()
+
         if msg['e'] == 'ORDER_TRADE_UPDATE':
             order = {
                 'orderId': msg['o']['i'],
