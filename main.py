@@ -23,6 +23,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.binance_twm = None
         self.need_to_update_orders = False
         self.need_to_update_positions = False
+        self.need_to_update_all = False
         self.orders = []
         self.positions = []
 
@@ -115,11 +116,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.update_orders()
         if self.need_to_update_positions:
             self.update_positions()
+        if self.need_to_update_all:
+            self.update_info()
 
     def user_message(self, msg):
         print(msg)
         if "e" in msg.keys() and msg["e"] == "error":
-            self.update_info()
+            self.need_to_update_all = True
 
         if msg['e'] == 'ORDER_TRADE_UPDATE':
             order = {
